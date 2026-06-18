@@ -1,0 +1,219 @@
+---
+title: "NYPD Shooting Incident Data Report"
+author: "Spoorthi Thathigowdru Shanthalingappa"
+date: "2026-05-31"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduction 
+Gun violence remains a significant public safety concern in major urban areas, making it important to understand patterns and trends in shooting incidents over time. The NYPD Shooting Incident Dataset provides detailed information on shooting events reported in New York City, including the date, borough, location, and whether the incident resulted in a statistical murder.
+
+The purpose of this project is to explore trends in shooting incidents and statistical murders across New York City using data from the NYPD. The analysis begins with data cleaning and preparation, followed by visualizations that examine yearly patterns and compare trends between Brooklyn and the Bronx. Additional analysis investigates year-to-year changes in shootings and murders, while a linear regression model is used to examine the relationship between the number of shooting incidents and the number of statistical murders. Through these methods, the project aims to provide a clearer understanding of gun violence trends and demonstrate the use of data analysis techniques in studying public safety issues.
+
+## Data Source Documentation
+
+The dataset used in this analysis is the NYPD Shooting Incident Data (Historic) dataset obtained from the New York City Open Data Portal. The dataset is maintained by the New York City Police Department and contains records of shooting incidents reported throughout New York City.
+
+## Data Source:
+https://data.cityofnewyork.us/
+
+## Dataset:
+NYPD Shooting Incident Data (Historic)
+
+The data were downloaded directly from the NYC Open Data portal using a URL, allowing the analysis to be reproduced without manually downloading files. Because the dataset is regularly updated, results may differ slightly if the analysis is rerun at a later date.
+
+```{r libraries}
+# Import libraries used for data cleaning, analysis, and working with dates
+library(tidyverse)
+library(lubridate)
+```
+## STEP 1 : IMPORT DATA
+
+The first step is to import the NYPD Shooting Incident Dataset directly from the New York City Open Data portal. Importing the data directly from the source ensures that the analysis uses the most current version available and improves reproducibility. The dataset contains information on shooting incidents across New York City, including the date of occurrence, borough, geographic location, and indicators related to the outcome of the incident. Once imported, the dataset serves as the foundation for all subsequent cleaning, visualization, and modeling activities.
+
+```{r import_data}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+NYPD_Shooting <- read_csv(url)
+```
+
+## Step 2 : Tidy
+
+Raw datasets often contain variables that are unnecessary for a particular analysis or are stored in formats that make analysis difficult. In this step, the occurrence date is converted into a standard date format so that time-based analyses can be performed accurately. A new variable representing the year of each incident is created to facilitate annual trend analysis. Several location-related variables, such as geographic coordinates and jurisdiction codes, are removed because they are not required for the objectives of this project. These cleaning procedures simplify the dataset while retaining the information necessary to study shooting trends over time.
+
+```{r tidy_data}
+NYPD_Shooting <- NYPD_Shooting %>% 
+  mutate(
+    OCCUR_DATE = mdy(OCCUR_DATE), # Convert date column to Date format
+    YEAR = year(OCCUR_DATE)  # Extract year from occurrence date
+  )%>%
+  select(-c(JURISDICTION_CODE,  # Remove variables not used in this analysis
+            X_COORD_CD,
+            Y_COORD_CD,
+            Latitude,
+            OCCUR_TIME,
+            Longitude,
+            Lon_Lat))
+
+# Display summary statistics
+summary(NYPD_Shooting)
+```
+
+## Step 3 : Visualizations 
+
+Data visualization provides an effective way to identify patterns and trends that may not be immediately apparent from summary statistics alone. The first visualization examines annual totals of shooting incidents and statistical murders throughout New York City, providing a broad overview of changes in gun violence over time. Because murders occur less frequently than shootings, murder counts are scaled to improve visual comparison. The second visualization focuses on Brooklyn and the Bronx, two boroughs that have historically experienced relatively high numbers of shooting incidents. Comparing these boroughs helps reveal similarities and differences in how gun violence has evolved across different parts of the city.
+
+```{r visualization}
+##Calculate yearly totals for shootings and statistical murders
+yearly_summary <- NYPD_Shooting %>%
+  group_by(YEAR) %>%
+  summarize(
+    shootings = n(),  #Create a new column called shootings and store the number of rows in it
+    murders = sum(STATISTICAL_MURDER_FLAG, na.rm = TRUE)
+  )
+
+## Plot yearly totals for shootings and statistical murders
+yearly_summary %>%
+  ggplot(aes(x = YEAR)) +
+  geom_line(aes(y = shootings, color = "Shootings")) +
+  geom_point(aes(y = shootings, color = "Shootings")) +
+  geom_line(aes(y = murders*10 , color = "Murders")) + 
+  geom_point(aes(y = murders*10 , color = "Murders")) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90)
+  ) +
+  labs(
+    title = "NYPD Shootings and Statistical Murders by Year",
+    x = "Year",
+    y = NULL,
+    color = NULL
+  )
+
+##Compare shooting trends in Brooklyn and the Bronx
+
+boroughs <- c("BROOKLYN", "BRONX")
+
+NYPD_Shooting %>%
+  filter(BORO %in% boroughs) %>%
+  group_by(YEAR, BORO) %>%
+  summarize(shootings = n()) %>%
+  ggplot(aes(x = YEAR)) +
+  geom_line(aes(y = shootings, color = BORO)) +
+  geom_point(aes(y = shootings, color = BORO)) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Shooting Incidents by Borough",
+    x = "Year",
+    y = "Number of Incidents",
+    color = "Borough"
+  )
+```
+
+## Step 4 : Analysis
+
+While annual totals provide useful information, examining year-to-year changes can reveal periods of increasing or decreasing gun violence more clearly. In this step, annual changes in both shootings and murders are calculated using the difference between consecutive years. This analysis highlights years in which substantial increases or decreases occurred and helps identify long-term trends. Similar calculations are performed for Brooklyn and the Bronx to determine whether changes in shooting incidents followed similar patterns across boroughs. By focusing on changes rather than absolute totals, this analysis provides a deeper understanding of fluctuations in gun violence over time.
+```{r analysis, warning=FALSE}
+# Calculate annual changes in shootings and murders
+yearly_summary <- NYPD_Shooting %>%
+  group_by(YEAR) %>%
+  summarize(
+    shootings = n(),
+    murders = sum(STATISTICAL_MURDER_FLAG, na.rm = TRUE)
+  ) %>%
+  mutate(
+    new_shootings = shootings - lag(shootings),
+    new_murders = murders - lag(murders)
+  )
+
+# Plot yearly changes
+yearly_summary %>%
+  ggplot(aes(x = YEAR, y = new_shootings)) +
+  geom_line(aes(color = "new_shootings")) +
+  geom_point(aes(color = "new_shootings")) +
+  geom_line(aes(y = new_murders * 10, color = "new_murders")) +
+  geom_point(aes(y = new_murders * 10, color = "new_murders")) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90)
+  ) +
+  labs(
+    title = "Year-to-Year Change in Shootings and Murders",
+    x = "Year",
+    y = NULL,
+    color = NULL
+  )
+
+# Calculate borough-level yearly changes
+
+boroughs <- c("BROOKLYN", "BRONX")
+
+borough_yearly <- NYPD_Shooting %>%
+  filter(BORO %in% boroughs) %>%
+  group_by(BORO, YEAR) %>%
+  summarize(shootings = n(), .groups = "drop") %>%
+  group_by(BORO) %>%
+  mutate(
+    new_shootings = shootings - lag(shootings)
+  )
+
+# Plot borough-level yearly changes
+
+borough_yearly %>%
+  ggplot(aes(x = YEAR)) +
+  geom_line(aes(y = new_shootings, color = BORO)) +
+  geom_point(aes(y = new_shootings, color = BORO)) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  labs(
+    title = "Year-to-Year Change in Shootings by Borough",
+    x = "Year",
+    y = "Change in Shootings",
+    color = "Borough"
+  )
+```
+
+## STEP 5 : Modeling
+
+A simple linear regression model is used to investigate the relationship between annual shooting incidents and annual statistical murders. The objective of the model is to determine whether years with more shootings also tend to experience more murders. Regression analysis provides a quantitative method for measuring the strength and direction of this relationship. After fitting the model, predicted murder counts are generated and compared with the observed values. Although the model is intentionally simple, it provides insight into how strongly shooting activity is associated with murder counts and serves as an example of how statistical modeling can be applied to public safety data.
+
+```{r modeling}
+# Fit linear model
+mod <- lm(murders ~ shootings, data = yearly_summary)
+# View model results
+summary(mod)
+# Add predictions
+yearly_w_pred <- yearly_summary %>%
+  mutate(pred = predict(mod))
+
+yearly_w_pred
+
+# Plot actual vs predicted values
+yearly_w_pred %>%
+  ggplot() +
+  geom_point(aes(x = shootings, y = murders), color = "blue") +
+  geom_point(aes(x = shootings, y = pred), color = "red") +
+  labs(
+    title = "Actual vs Predicted Murders",
+    x = "Number of Shootings",
+    y = "Number of Murders"
+  )
+
+```
+
+## Bias
+The dataset includes only shooting incidents that were reported to and officially recorded by the NYPD. Incidents that were not reported or not documented are not represented in the data.The classification of a statistical murder is based on police investigations and administrative records. Changes in investigative findings or classification procedures may affect how incidents are categorized.Reporting practices, policing strategies, and data collection methods may have changed over time, potentially affecting the consistency of the data across years.The dataset reflects recorded incidents rather than the true underlying level of gun violence. Differences in reporting behavior among communities may influence the number of incidents captured in the data set.Geographic information may contain inaccuracies due to data entry errors or updates made after the initial incident report.
+
+## Conclusion 
+
+This project analyzed NYPD shooting incident data to examine trends in shootings and statistical murders over time. The visualizations revealed how both measures changed across years and highlighted differences between Brooklyn and the Bronx. The year-to-year analysis identified periods of increases and decreases in gun violence, while the borough comparison showed that trends do not always occur uniformly across New York City.
+
+A linear regression model was used to explore the relationship between shootings and murders. The results suggest a positive association between the two variables, and the predicted values generally followed the same pattern as the observed data. Overall, the analysis provides insight into long-term trends in gun violence and demonstrates how data visualization and statistical modeling can be used to study public safety issues.
+
